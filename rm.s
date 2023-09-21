@@ -518,6 +518,7 @@ lchmod:
 		move.l	a0,-(a7)
 		DOS	_CHMOD
 		addq.l	#6,a7
+		tst.l	d0
 		rts
 *****************************************************************
 isreldir:
@@ -616,7 +617,7 @@ perror_3:
 .data
 
 	dc.b	0
-	dc.b	'## rm 1.1 ##  Copyright(C)1992 by Itagaki Fumihiko',0
+	dc.b	'## rm 1.2 ##  Copyright(C)1992 by Itagaki Fumihiko',0
 
 .even
 perror_table:
