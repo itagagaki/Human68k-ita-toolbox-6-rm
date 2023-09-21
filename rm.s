@@ -10,8 +10,13 @@
 * Itagaki Fumihiko 06-Nov-92  strip_excessive_slashesのバグfixに伴う改版．
 *                             些細なメッセージ変更．
 * 1.3
+* Itagaki Fumihiko 20-Jan-93  GETPDB -> lea $10(a0),a0
+* Itagaki Fumihiko 20-Jan-93  引数 - と -- の扱いの変更
+* Itagaki Fumihiko 23-Jan-93  -f オプションが指定されている場合には，ファイル引数が与えられ
+*                             ていなくても正常終了するようにした．
+* 1.4
 *
-* Usage: rm [ -firvR ] <ファイル> ...
+* Usage: rm [ -firvR ] [ -- ] <ファイル> ...
 
 .include doscall.h
 .include error.h
@@ -50,8 +55,7 @@ start:
 		dc.b	'#HUPAIR',0
 start1:
 		lea	stack_bottom,a7			*  A7 := スタックの底
-		DOS	_GETPDB
-		movea.l	d0,a0				*  A0 : PDBアドレス
+		lea	$10(a0),a0			*  A0 : PDBアドレス
 		move.l	a7,d0
 		sub.l	a0,d0
 		move.l	d0,-(a7)
@@ -88,10 +92,19 @@ decode_opt_loop1:
 		cmpi.b	#'-',(a0)
 		bne	decode_opt_done
 
+		tst.b	1(a0)
+		beq	decode_opt_done
+
 		subq.l	#1,d7
 		addq.l	#1,a0
 		move.b	(a0)+,d0
+		cmp.b	#'-',d0
+		bne	decode_opt_loop2
+
+		tst.b	(a0)+
 		beq	decode_opt_done
+
+		subq.l	#1,a0
 decode_opt_loop2:
 		cmp.b	#'f',d0
 		beq	set_option_f
@@ -155,10 +168,9 @@ decode_opt_done:
 	*
 	*  処理開始
 	*
+		moveq	#0,d6				*  D6.W : エラー・コード
 		tst.l	d7
 		beq	too_few_args
-
-		moveq	#0,d6				*  D6.W : エラー・コード
 rm_loop:
 		movea.l	a0,a1
 		bsr	strfor1
@@ -177,6 +189,9 @@ exit_program:
 		DOS	_EXIT2
 ****************
 too_few_args:
+		btst	#FLAG_f,d5
+		bne	exit_program
+
 		lea	msg_too_few_args(pc),a0
 		bsr	werror_myname_and_msg
 usage:
@@ -620,7 +635,7 @@ perror_3:
 .data
 
 	dc.b	0
-	dc.b	'## rm 1.3 ##  Copyright(C)1992 by Itagaki Fumihiko',0
+	dc.b	'## rm 1.4 ##  Copyright(C)1992-93 by Itagaki Fumihiko',0
 
 .even
 perror_table:
@@ -676,7 +691,7 @@ msg_directory:			dc.b	'ディレクトリ“',0
 msg_remove:			dc.b	'”を削除しますか？ ',0
 msg_enter:			dc.b	'”の下に進みますか？ ',0
 msg_dir_too_deep:		dc.b	'ディレクトリが深過ぎて処理できません',0
-msg_usage:			dc.b	CR,LF,'使用法:  rm [-firvR] [-] <ファイル> ...'
+msg_usage:			dc.b	CR,LF,'使用法:  rm [-firvR] [--] <ファイル> ...'
 msg_newline:			dc.b	CR,LF,0
 dos_wildcard_all:		dc.b	'*.*',0
 *****************************************************************
