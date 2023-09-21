@@ -1,6 +1,12 @@
 * rm - remove file
 *
 * Itagaki Fumihiko  8-Aug-92  Create.
+* 1.0
+* Itagaki Fumihiko 29-Sep-92  標準入力がキャラクタ・デバイスであるとき，読み込み専用属性の
+*                             付いたディレクトリには，進むかどうかを問い合わせるようにした．
+*                             また，ディレクトリは読み込み専用やシステム属性が付いていても
+*                             削除するようにした．
+* 1.1
 *
 * Usage: rm [ -firvR ] <ファイル> ...
 
@@ -232,7 +238,7 @@ remove_not_abs:
 		bsr	isreldir
 		beq	cannot_remove
 remove_1:
-		bsr	lstat
+		bsr	lgetmode
 		bpl	remove_entry_1
 
 		btst	#FLAG_f,d5
@@ -241,10 +247,13 @@ remove_entry:
 		tst.l	d0
 		bmi	perror
 remove_entry_1:
+		btst	#MODEBIT_VOL,d0
+		bne	remove_file
+
 		btst	#MODEBIT_DIR,d0
 		bne	remove_directory
 remove_file:
-		bsr	confirm_file
+		bsr	confirm_remove_file
 		bne	remove_return_false
 
 		bsr	verbose
@@ -259,6 +268,7 @@ remove_directory:
 		btst	#FLAG_r,d5
 		beq	it_is_directory
 
+		move.w	d0,d4				*  D4.W : このディレクトリの mode
 		addq.l	#1,d3				*  ディレクトリの深さをインクリメント
 		cmp.l	#MAXRECURSE,d3
 		bhi	dir_too_deep
@@ -301,18 +311,18 @@ remove_directory_contents_loop:
 		*  -i が指定されているなら，このディレクトリ下に進むかどうかを問い合わせる．
 		*
 		movem.l	a2-a3,-(a7)
-		lea	msg_enter(pc),a3
-		bsr	confirm_dir
+		move.l	d4,d0
+		bsr	confirm_enter_dir
 		movem.l	(a7)+,a2-a3
 		bne	remove_directory_return_false
 remove_directory_contents_2:
-		movem.l	d2/a0/a2-a3,-(a7)
+		movem.l	d2/d4/a0/a2-a3,-(a7)
 		movea.l	a3,a0
 		bsr	strcpy
 		movea.l	a2,a0
-		bsr	lstat
+		bsr	lgetmode
 		bsr	remove_entry			*  再帰！  1回あたり164バイトのスタックを消費する
-		movem.l	(a7)+,d2/a0/a2-a3
+		movem.l	(a7)+,d2/d4/a0/a2-a3
 		st	d1
 		tst.l	d0
 		beq	remove_directory_contents_continue
@@ -330,14 +340,36 @@ do_remove_directory:
 		tst.b	d2				*  ディレクトリの中に削除しなかったものが残っているなら
 		beq	perror				*  どうせ削除できないのだから，confirm せずにエラーとして先に進む．
 
-		lea	msg_remove(pc),a3
-		bsr	confirm_dir
+		moveq	#1,d1				*  1 : remove directory?
+		bsr	confirm_i
 		bne	remove_return_false
 
 		bsr	verbose
+		btst	#MODEBIT_RDO,d4
+		bne	do_remove_directory_1
+
+		btst	#MODEBIT_SYS,d4
+		bne	do_remove_directory_1
+
+		moveq	#-1,d4
+		bra	do_remove_directory_2
+
+do_remove_directory_1:
+		moveq	#MODEVAL_DIR,d0
+		bsr	lchmod
+do_remove_directory_2:
 		move.l	a0,-(a7)
 		DOS	_RMDIR
 		addq.l	#4,a7
+		tst.l	d0
+		bpl	remove_done
+
+		tst.l	d4
+		bmi	remove_done
+
+		exg	d0,d4
+		bsr	lchmod
+		exg	d0,d4
 remove_done:
 		tst.l	d0
 		bmi	perror
@@ -367,10 +399,21 @@ dir_too_deep:
 		lea	msg_dir_too_deep(pc),a2
 		bsr	werror_myname_word_colon_msg
 		bra	remove_return_false
+****************
+confirm_enter_dir:
+		moveq	#-1,d1				*  -1: enter directory?
+
+		*  標準入力が端末ならば，読み込み専用属性ビットがONである場合，問い合わせる
+
+		tst.b	stdin_is_terminal
+		beq	confirm_i
+
+		btst	#MODEBIT_RDO,d4
+		beq	confirm_i
+		bra	confirm_f
 *****************************************************************
-confirm_file:
-		lea	msg_remove(pc),a3
-		st	d1
+confirm_remove_file:
+		moveq	#0,d1				*  0: remove file?
 
 		*  標準入力が端末ならば，ボリューム・ラベル，読み込み専用，
 		*  隠し，システムのどれかの属性ビットがONである場合，問い合わせる
@@ -381,55 +424,57 @@ confirm_file:
 		movem.l	d0,-(a7)
 		and.b	#(MODEVAL_VOL|MODEVAL_RDO|MODEVAL_HID|MODEVAL_SYS),d0
 		movem.l	(a7)+,d0
-		beq	confirm_i
-		bra	confirm
-****************
-confirm_dir:
-		lea	msg_directory(pc),a2
-		sf	d1
-****************
+		bne	confirm_f
 confirm_i:
 		btst	#FLAG_i,d5
 		beq	confirm_yes
-confirm:
+confirm_f:
 		btst	#FLAG_f,d5
 		bne	confirm_yes
 
 		bsr	werror_myname
 		move.l	a0,-(a7)
-		tst.b	d1
-		beq	confirm_4
+		lea	msg_directory(pc),a2
+		lea	msg_enter(pc),a3
+		tst.l	d1
+		bmi	confirm_1
 
+		lea	msg_remove(pc),a3
+		bne	confirm_5
+confirm_0:
+		lea	msg_file(pc),a2
 		btst	#MODEBIT_VOL,d0
 		beq	confirm_1
 
 		lea	msg_volumelabel(pc),a0
 		bsr	werror
-		bra	confirm_5
+		bra	confirm_7
 
 confirm_1:
-		lea	msg_file(pc),a2
 		btst	#MODEBIT_RDO,d0
-		beq	confirm_2
+		beq	confirm_3
 
 		lea	msg_readonly(pc),a0
 		bsr	werror
-confirm_2:
+confirm_3:
+		tst.l	d1
+		bmi	confirm_5
+
 		btst	#MODEBIT_HID,d0
-		beq	confirm_3
+		beq	confirm_4
 
 		lea	msg_hidden(pc),a0
 		bsr	werror
-confirm_3:
+confirm_4:
 		btst	#MODEBIT_SYS,d0
-		beq	confirm_4
+		beq	confirm_5
 
 		lea	msg_system(pc),a0
 		bsr	werror
-confirm_4:
+confirm_5:
 		movea.l	a2,a0
 		bsr	werror
-confirm_5:
+confirm_7:
 		movea.l	(a7),a0
 		bsr	werror
 		movea.l	a3,a0
@@ -441,10 +486,10 @@ confirm_5:
 		addq.l	#4,a7
 		bsr	werror_newline
 		move.b	1(a0),d0
-		beq	confirm_6
+		beq	confirm_8
 
 		move.b	2(a0),d0
-confirm_6:
+confirm_8:
 		movea.l	(a7)+,a0
 confirm_return:
 		cmp.b	#'y',d0
@@ -466,12 +511,13 @@ verbose:
 verbose_return:
 		rts
 *****************************************************************
-lstat:
-		move.w	#-1,-(a7)			*  ファイルの属性を得る．
-		move.l	a0,-(a7)			*  ファイルがシンボリック・リンクである
-		DOS	_CHMOD				*  場合は，リンク自体の属性を得る．
-		addq.l	#6,a7				*  そのためには CHMOD で良い．
-		tst.l	d0				*  （lndrv 1.0 への対応）
+lgetmode:
+		moveq	#-1,d0
+lchmod:
+		move.w	d0,-(a7)
+		move.l	a0,-(a7)
+		DOS	_CHMOD
+		addq.l	#6,a7
 		rts
 *****************************************************************
 isreldir:
@@ -570,7 +616,7 @@ perror_3:
 .data
 
 	dc.b	0
-	dc.b	'## rm 1.0 ##  Copyright(C)1992 by Itagaki Fumihiko',0
+	dc.b	'## rm 1.1 ##  Copyright(C)1992 by Itagaki Fumihiko',0
 
 .even
 perror_table:
@@ -624,7 +670,7 @@ msg_file:			dc.b	'ファイル“',0
 msg_volumelabel:		dc.b	'ボリュームラベル“',0
 msg_directory:			dc.b	'ディレクトリ“',0
 msg_remove:			dc.b	'”を削除しますか？',0
-msg_enter:			dc.b	'”は空ではありません．中に進みますか？',0
+msg_enter:			dc.b	'”の下に進みますか？',0
 msg_dir_too_deep:		dc.b	'ディレクトリが深過ぎて処理できません',0
 msg_usage:			dc.b	CR,LF,'使用法:  rm [-firvR] [-] <ファイル> ...'
 msg_newline:			dc.b	CR,LF,0
