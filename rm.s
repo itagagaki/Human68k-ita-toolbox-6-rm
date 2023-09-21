@@ -1,12 +1,15 @@
 * rm - remove file
 *
-* Itagaki Fumihiko  8-Aug-92  Create.
+* Itagaki Fumihiko 08-Aug-92  Create.
 * 1.0
 * Itagaki Fumihiko 29-Sep-92  標準入力がキャラクタ・デバイスであるとき，読み込み専用属性の
 *                             付いたディレクトリには，進むかどうかを問い合わせるようにした．
 *                             また，ディレクトリは読み込み専用やシステム属性が付いていても
 *                             削除するようにした．
 * 1.1
+* Itagaki Fumihiko 06-Nov-92  strip_excessive_slashesのバグfixに伴う改版．
+*                             些細なメッセージ変更．
+* 1.3
 *
 * Usage: rm [ -firvR ] <ファイル> ...
 
@@ -617,7 +620,7 @@ perror_3:
 .data
 
 	dc.b	0
-	dc.b	'## rm 1.2 ##  Copyright(C)1992 by Itagaki Fumihiko',0
+	dc.b	'## rm 1.3 ##  Copyright(C)1992 by Itagaki Fumihiko',0
 
 .even
 perror_table:
@@ -670,8 +673,8 @@ msg_system:			dc.b	'システム',0
 msg_file:			dc.b	'ファイル“',0
 msg_volumelabel:		dc.b	'ボリュームラベル“',0
 msg_directory:			dc.b	'ディレクトリ“',0
-msg_remove:			dc.b	'”を削除しますか？',0
-msg_enter:			dc.b	'”の下に進みますか？',0
+msg_remove:			dc.b	'”を削除しますか？ ',0
+msg_enter:			dc.b	'”の下に進みますか？ ',0
 msg_dir_too_deep:		dc.b	'ディレクトリが深過ぎて処理できません',0
 msg_usage:			dc.b	CR,LF,'使用法:  rm [-firvR] [-] <ファイル> ...'
 msg_newline:			dc.b	CR,LF,0
